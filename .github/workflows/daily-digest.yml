@@ -1,0 +1,145 @@
+# Idea Digest - Daily Pipeline Workflow
+#
+# This workflow runs the Idea Digest pipeline on a daily schedule
+# and supports manual execution via workflow_dispatch.
+#
+# Required GitHub Secrets:
+#   AIRTABLE_API_KEY  - Your Airtable API key (required for production)
+#   AIRTABLE_BASE_ID  - Your Airtable base ID (required for production)
+#
+# Optional GitHub Secrets:
+#   AIRTABLE_TABLE_NAME - Table name (default: "Ideas")
+#   GITHUB_TOKEN_PAT    - Personal access token for higher rate limits
+#   PRODUCT_HUNT_TOKEN  - Product Hunt API token
+#
+# To configure secrets:
+#   1. Go to your repository on GitHub
+#   2. Navigate to Settings > Secrets and variables > Actions
+#   3. Click "New repository secret"
+#   4. Add each required secret with its value
+
+name: Daily Idea Digest
+
+on:
+  # Run daily at 9 AM UTC (adjust to your preferred time)
+  schedule:
+    - cron: '0 9 * * *'
+  
+  # Allow manual triggering from the Actions tab
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no storage writes)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      limit_per_source:
+        description: 'Maximum items to fetch per source'
+        required: false
+        default: '20'
+        type: string
+      sources:
+        description: 'Sources to fetch from (comma-separated, or "all")'
+        required: false
+        default: 'all'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  run-pipeline:
+    name: Run Idea Digest Pipeline
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Validate configuration
+        env:
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+        run: |
+          echo "Validating configuration..."
+          python main.py --show-config
+      
+      - name: Run pipeline (scheduled)
+        if: github.event_name == 'schedule'
+        env:
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+          AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME || 'Ideas' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN_PAT || '' }}
+          PRODUCT_HUNT_TOKEN: ${{ secrets.PRODUCT_HUNT_TOKEN || '' }}
+        run: |
+          echo "Running scheduled pipeline..."
+          python main.py --limit-per-source 20 --verbose
+      
+      - name: Run pipeline (manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+          AIRTABLE_TABLE_NAME: ${{ secrets.AIRTABLE_TABLE_NAME || 'Ideas' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN_PAT || '' }}
+          PRODUCT_HUNT_TOKEN: ${{ secrets.PRODUCT_HUNT_TOKEN || '' }}
+        run: |
+          # Build command based on inputs
+          CMD="python main.py --verbose"
+          
+          # Add dry-run flag if requested
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            CMD="$CMD --dry-run"
+          fi
+          
+          # Add limit if specified
+          if [ -n "${{ github.event.inputs.limit_per_source }}" ]; then
+            CMD="$CMD --limit-per-source ${{ github.event.inputs.limit_per_source }}"
+          fi
+          
+          # Add sources filter if not "all"
+          if [ "${{ github.event.inputs.sources }}" != "all" ] && [ -n "${{ github.event.inputs.sources }}" ]; then
+            # Convert comma-separated to space-separated
+            SOURCES=$(echo "${{ github.event.inputs.sources }}" | tr ',' ' ')
+            CMD="$CMD --sources $SOURCES"
+          fi
+          
+          echo "Running: $CMD"
+          $CMD
+      
+      - name: Upload digest artifact
+        if: success() && github.event.inputs.dry_run != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ github.run_id }}
+          path: digests/
+          retention-days: 30
+          if-no-files-found: ignore
+      
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Pipeline Run Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          if [ -f "digests/$(date +%Y-%m-%d).md" ]; then
+            echo "- **Digest:** Generated ✓" >> $GITHUB_STEP_SUMMARY
+          fi
+

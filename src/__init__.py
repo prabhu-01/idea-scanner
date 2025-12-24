@@ -1,0 +1,5 @@
+"""
+Idea Digest - Source package.
+"""
+
+

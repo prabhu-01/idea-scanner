@@ -1,0 +1,8 @@
+python-dotenv
+requests
+feedparser
+beautifulsoup4
+playwright
+pytest
+
+
