@@ -331,5 +331,25 @@ TEST_CATEGORIES = {
             "Silent failures without proper exit codes",
         ],
     },
+    "ai_summarizer": {
+        "name": "AI Summarization Service",
+        "description": "Validates AI summarizer functionality and error handling",
+        "protects_against": [
+            "AI API failures crashing the application",
+            "Missing API key not being handled gracefully",
+            "Malformed API responses causing errors",
+            "Prompt injection or security issues",
+        ],
+    },
+    "web_app": {
+        "name": "Web Dashboard",
+        "description": "Validates Flask routes, API endpoints, and UI rendering",
+        "protects_against": [
+            "Routes returning incorrect status codes",
+            "API endpoints not handling invalid input",
+            "Template rendering failures",
+            "Missing error handling in endpoints",
+        ],
+    },
 }
 

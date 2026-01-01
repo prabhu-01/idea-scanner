@@ -1,130 +1,201 @@
 # Idea Digest
 
-A daily idea discovery and digest system that aggregates products, projects, and discussions from multiple platforms, scores them by relevance, persists them to Airtable, and generates human-readable daily digests.
+<div align="center">
 
-## Purpose
+**An intelligent idea discovery platform that aggregates, analyzes, and surfaces the best ideas from across the web.**
 
-Idea Digest solves the problem of information overload: instead of manually checking Product Hunt, Hacker News, and GitHub every day, it automatically fetches new items, filters them by your interests, and delivers a curated summary.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Airtable](https://img.shields.io/badge/storage-Airtable-yellow.svg)](https://airtable.com)
+[![Groq AI](https://img.shields.io/badge/AI-Groq-purple.svg)](https://groq.com)
 
-**Key capabilities:**
-- Fetch from multiple sources in a single run
-- Score items by theme relevance, recency, and popularity
-- Deduplicate across runs (idempotent storage)
-- Generate Markdown digests grouped by topic
-- Run manually, via cron, or via GitHub Actions
+</div>
 
 ---
 
-## Architecture Overview
+## 🎯 Overview
+
+Idea Digest solves the problem of **information overload**. Instead of manually checking Product Hunt, Hacker News, and GitHub every day, it automatically:
+
+- **Fetches** trending ideas from multiple platforms
+- **Scores** items by relevance, recency, and engagement
+- **Stores** everything in Airtable with deduplication
+- **Generates** daily Markdown digests
+- **Provides** a modern web dashboard with AI-powered analysis
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 🔄 **Multi-Source Aggregation** | Product Hunt, Hacker News, GitHub Trending |
+| 🤖 **AI-Powered Analysis** | Deep insights using Groq's LLaMA 3.3 (free) |
+| 👤 **Maker Information** | Creator profiles, bios, and social links |
+| 📊 **Smart Scoring** | Theme matching, recency decay, popularity signals |
+| 🌐 **Modern Web Dashboard** | Beautiful UI with real-time filtering |
+| 📝 **Daily Digests** | Auto-generated Markdown summaries |
+| ☁️ **Airtable Storage** | Free tier friendly with auto-cleanup |
+
+---
+
+## 🖥️ Screenshots
+
+### Dashboard
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  📊 29 ideas  │  ● 10 HN  ● 10 PH  ● 9 GH          Last sync: 2h ago  48/1200  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │ ═══ HN ════  │  │ ═══ PH ════  │  │ ═══ GH ════  │  │ ═══ GH ════  │       │
+│  │              │  │              │  │              │  │              │       │
+│  │ Title...     │  │ Title...     │  │ Title...     │  │ Title...     │       │
+│  │ Description  │  │ Description  │  │ Description  │  │ Description  │       │
+│  │              │  │              │  │              │  │              │       │
+│  │ ▲284  💬52   │  │ ▲847  💬23   │  │ ⭐12.4k +89  │  │ ⭐3.2k  +156 │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘       │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### AI Analysis Modal
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                                              [✕]                │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  PRODUCT HUNT                                                              │ │
+│  │  AI Tool for Developers                                                    │ │
+│  │  ▲ 847 Upvotes   💬 23 Comments                                           │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  [Avatar]  John Doe · Founder & CEO                            [🔗] [𝕏]   │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                 │
+│  🤖 AI ANALYSIS                                                                │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  This tool revolutionizes developer workflows by...                       │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                 │
+│  ┌─────────────────────┐  ┌─────────────────────┐                             │
+│  │ Problem Solved      │  │ Target Audience     │                             │
+│  │ Automates tedious..│  │ Developers who...   │                             │
+│  └─────────────────────┘  └─────────────────────┘                             │
+│                                                                                 │
+│  [← Back to Dashboard]                              [View Original →]          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              IDEA DIGEST PIPELINE                           │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                      │
-│   │ Product Hunt│   │ Hacker News │   │   GitHub    │    ◀── SOURCES       │
-│   │    (RSS)    │   │ (Firebase)  │   │ (Scraping)  │                      │
-│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                      │
-│          │                 │                 │                              │
-│          └────────────────┬┴─────────────────┘                              │
-│                           ▼                                                 │
-│                    ┌─────────────┐                                          │
-│                    │  IdeaItem   │   ◀── Normalized data model              │
-│                    │  (dataclass)│                                          │
-│                    └──────┬──────┘                                          │
-│                           │                                                 │
-│                           ▼                                                 │
-│   ┌───────────────────────────────────────────────────────────┐            │
-│   │                      SCORING ENGINE                        │            │
-│   │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │            │
-│   │  │   Themes    │  │   Recency   │  │   Popularity    │    │            │
-│   │  │  (keywords) │  │ (age decay) │  │   (points)      │    │            │
-│   │  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘    │            │
-│   │         └────────────────┼──────────────────┘             │            │
-│   │                          ▼                                 │            │
-│   │            score = 0.4×theme + 0.3×recency + 0.3×popularity│           │
-│   └───────────────────────────┬───────────────────────────────┘            │
-│                               │                                             │
-│                               ▼                                             │
-│                    ┌─────────────────┐                                      │
-│                    │    STORAGE      │   ◀── Airtable (or mock)            │
-│                    │ (upsert/dedup)  │                                      │
-│                    └────────┬────────┘                                      │
-│                             │                                               │
-│                             ▼                                               │
-│                    ┌─────────────────┐                                      │
-│                    │     DIGEST      │   ◀── Markdown output               │
-│                    │   (generator)   │       digests/YYYY-MM-DD.md         │
-│                    └─────────────────┘                                      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           IDEA DIGEST ARCHITECTURE                              │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│   DATA SOURCES                           WEB LAYER                              │
+│   ════════════                           ═════════                              │
+│   ┌─────────────┐                        ┌─────────────────────────────────┐   │
+│   │ Product Hunt│ ──┐                    │         Flask Dashboard         │   │
+│   │ (GraphQL)   │   │                    │  ┌─────────────────────────┐    │   │
+│   └─────────────┘   │                    │  │     Stats Bar           │    │   │
+│   ┌─────────────┐   │   ┌──────────┐     │  ├─────────────────────────┤    │   │
+│   │ Hacker News │ ──┼──▶│ Pipeline │     │  │     Ideas Grid          │    │   │
+│   │ (Firebase)  │   │   └────┬─────┘     │  ├─────────────────────────┤    │   │
+│   └─────────────┘   │        │           │  │   AI Analysis Modal     │    │   │
+│   ┌─────────────┐   │        ▼           │  └─────────────────────────┘    │   │
+│   │   GitHub    │ ──┘   ┌──────────┐     └──────────────┬──────────────────┘   │
+│   │ (Scraping)  │       │ Scoring  │                    │                      │
+│   └─────────────┘       └────┬─────┘                    │                      │
+│                              │                          ▼                      │
+│                              ▼                    ┌───────────┐                │
+│                        ┌──────────┐               │  Groq AI  │                │
+│                        │ Airtable │◀──────────────│  (LLaMA)  │                │
+│                        │ Storage  │               └───────────┘                │
+│                        └────┬─────┘                                            │
+│                             │                                                  │
+│                             ▼                                                  │
+│                       ┌──────────┐                                             │
+│                       │ Markdown │                                             │
+│                       │ Digests  │                                             │
+│                       └──────────┘                                             │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Flow
 
-1. **Sources** fetch raw data from external APIs (HN Firebase, PH RSS, GitHub HTML)
-2. **Normalization** converts source-specific formats into `IdeaItem` dataclasses
-3. **Scoring** assigns a 0.0–1.0 score based on theme keywords, age, and popularity
-4. **Storage** upserts items to Airtable, deduplicating by `source_name + id`
-5. **Digest** reads scored items and generates a grouped Markdown summary
+1. **Sources** → Fetch from external APIs (HN Firebase, PH GraphQL, GitHub HTML)
+2. **Normalization** → Convert to unified `IdeaItem` model with maker info
+3. **Scoring** → Calculate relevance (theme × recency × popularity)
+4. **Storage** → Upsert to Airtable with deduplication
+5. **Dashboard** → Display with filters, metrics, AI analysis
+6. **Digest** → Generate daily Markdown summary
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-proj/
-├── main.py                  # CLI entry point
-├── requirements.txt         # Python dependencies
-├── .env.example             # Environment template
-├── .github/workflows/       # GitHub Actions automation
-│   └── daily-digest.yml     # Daily scheduled workflow
-├── docs/
-│   └── scheduling.md        # Detailed automation guide
-├── digests/                 # Generated digest files (gitignored)
+idea-digest/
+├── main.py                      # CLI entry point
+├── requirements.txt             # Python dependencies
+├── .env                         # Environment configuration (gitignored)
+├── README.md                    # This file
+│
 ├── src/
-│   ├── config/              # Environment and settings
-│   │   └── config.py        # Loads .env, exposes typed variables
+│   ├── config/
+│   │   └── config.py            # Environment loading, typed settings
+│   │
 │   ├── models/
-│   │   └── idea_item.py     # Core IdeaItem dataclass
-│   ├── sources/             # Data fetchers
-│   │   ├── base.py          # Abstract Source interface
-│   │   ├── hackernews.py    # Hacker News (Firebase API)
-│   │   ├── producthunt.py   # Product Hunt (RSS feed)
-│   │   └── github_trending.py  # GitHub (HTML scraping)
-│   ├── scoring/             # Relevance scoring
-│   │   ├── themes.py        # Theme definitions and keywords
-│   │   └── scorer.py        # Pure scoring functions
-│   ├── storage/             # Persistence layer
-│   │   ├── base.py          # Abstract Storage interface
-│   │   └── airtable.py      # Airtable + mock implementations
-│   ├── digest/              # Output generation
-│   │   └── generator.py     # Markdown digest builder
-│   └── pipeline.py          # Orchestrates the full flow
-└── tests/                   # pytest test suite
+│   │   └── idea_item.py         # IdeaItem dataclass with maker fields
+│   │
+│   ├── sources/                 # Data fetchers
+│   │   ├── base.py              # Abstract Source interface
+│   │   ├── hackernews.py        # HN Firebase API
+│   │   ├── producthunt.py       # PH GraphQL API
+│   │   └── github_trending.py   # GitHub HTML scraping
+│   │
+│   ├── scoring/
+│   │   ├── themes.py            # Interest themes and keywords
+│   │   └── scorer.py            # Scoring algorithms
+│   │
+│   ├── storage/
+│   │   └── airtable.py          # Airtable CRUD + free tier management
+│   │
+│   ├── services/
+│   │   └── ai_summarizer.py     # Groq AI integration
+│   │
+│   ├── digest/
+│   │   └── generator.py         # Markdown digest builder
+│   │
+│   └── pipeline.py              # Orchestrates full pipeline
+│
+├── web/
+│   ├── app.py                   # Flask application
+│   └── templates/
+│       ├── base.html            # Base template with styles
+│       ├── index.html           # Dashboard page
+│       ├── digests.html         # Digests list
+│       └── digest.html          # Single digest view
+│
+├── digests/                     # Generated digest files
+│   └── YYYY-MM-DD.md
+│
+└── tests/                       # Test suite
+    └── ...
 ```
-
-### Why Each Module Exists
-
-| Module | Responsibility | Design Rationale |
-|--------|----------------|------------------|
-| `config` | Load environment, expose settings | Centralized configuration avoids scattered `os.getenv()` calls |
-| `models` | Define `IdeaItem` dataclass | Single data structure ensures consistency across all modules |
-| `sources` | Fetch from external platforms | Abstract interface allows adding new sources without changing pipeline |
-| `scoring` | Compute relevance scores | Pure functions (no side effects) make scoring testable and predictable |
-| `storage` | Persist to Airtable | Abstract interface allows swapping backends (SQLite, Postgres, etc.) |
-| `digest` | Generate Markdown output | Separation from storage allows different output formats |
-| `pipeline` | Orchestrate execution | Single entry point for CLI, cron, and GitHub Actions |
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.10 or higher
-- An Airtable account (free tier works)
+- **Python 3.10+**
+- **Airtable account** (free tier works)
+- **Groq API key** (free at [console.groq.com](https://console.groq.com)) — optional, for AI features
 
 ### Installation
 
@@ -133,8 +204,8 @@ proj/
 git clone https://github.com/yourusername/idea-digest.git
 cd idea-digest
 
-# Create and activate virtual environment
-python -m venv venv
+# Create virtual environment
+python3 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
@@ -143,331 +214,402 @@ pip install -r requirements.txt
 
 ### Configuration
 
-```bash
-# Copy the example environment file
-cp .env.example .env
+Create a `.env` file in the project root:
 
-# Edit .env with your credentials
-# Required:
-#   AIRTABLE_API_KEY=your_api_key
-#   AIRTABLE_BASE_ID=your_base_id
+```bash
+# =============================================================================
+# REQUIRED
+# =============================================================================
+
+# Airtable (get from https://airtable.com/create/tokens)
+AIRTABLE_API_KEY=pat_xxxxxxxxxxxxx
+AIRTABLE_BASE_ID=appxxxxxxxxxxxxx
+AIRTABLE_TABLE_NAME=Ideas
+
+# =============================================================================
+# OPTIONAL - API Keys for Enhanced Features
+# =============================================================================
+
+# Product Hunt (https://www.producthunt.com/v2/oauth/applications)
+PRODUCT_HUNT_TOKEN=your_token_here
+
+# GitHub (https://github.com/settings/tokens) - for higher rate limits
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxx
+
+# Groq AI (https://console.groq.com) - for AI analysis
+GROQ_API_KEY=gsk_xxxxxxxxxxxxx
+
+# =============================================================================
+# OPTIONAL - Pipeline Settings
+# =============================================================================
+
+DEFAULT_LIMIT_PER_SOURCE=10
+REQUEST_TIMEOUT=30
+SCRAPE_DELAY=2.0
+
+# Airtable free tier management
+AIRTABLE_MAX_RECORDS=1000
+AIRTABLE_RETENTION_DAYS=30
+AIRTABLE_AUTO_CLEANUP=true
 ```
 
 ### First Run
 
 ```bash
 # Test with dry-run (no writes)
-python main.py --dry-run --verbose --limit-per-source 3
+python3 main.py --dry-run --verbose --limit 3
 
-# Full run (fetches, scores, stores, generates digest)
-python main.py
+# Full pipeline run
+python3 main.py --verbose
+
+# Check results
+ls digests/
 ```
 
-Your first digest will appear at `digests/YYYY-MM-DD.md`.
+### Start the Dashboard
+
+```bash
+# Run the web server
+python3 -m web.app
+
+# Open in browser
+open http://localhost:5001
+```
 
 ---
 
-## How It Works
+## 📊 IdeaItem Data Model
 
-Here's what happens when you run `python main.py`:
-
-### Step 1: Configuration Loading
-
-The pipeline starts by loading settings from `.env` via python-dotenv. Key settings include API keys, rate limits, and defaults.
-
-```
-.env → config.py → AIRTABLE_API_KEY, DEFAULT_LIMIT_PER_SOURCE, etc.
-```
-
-### Step 2: Source Instantiation
-
-Three source classes are created:
-- `HackerNewsSource` — reads from Firebase API
-- `ProductHuntSource` — parses RSS feed
-- `GitHubTrendingSource` — scrapes HTML page
-
-Each implements the `Source` interface with a `fetch_items()` method.
-
-### Step 3: Fetching
-
-Each source fetches up to `--limit-per-source` items (default: 20). Fetching is sequential with polite delays (`SCRAPE_DELAY`) to avoid rate limits.
-
-```
-HN API → [item, item, ...] → normalize → [IdeaItem, IdeaItem, ...]
-```
-
-If a source fails (network error, rate limit), it returns an empty list and the pipeline continues with other sources.
-
-### Step 4: Scoring
-
-Each `IdeaItem` is passed through the scoring engine:
-
-1. **Theme extraction**: Keywords in title/description are matched against `INTEREST_THEMES`
-2. **Recency calculation**: Linear decay from 1.0 (today) to 0.0 (7+ days old)
-3. **Popularity extraction**: HN points normalized (100 points = 0.5, 500+ = 1.0)
-
-Final score: `0.4 × theme + 0.3 × recency + 0.3 × popularity`
-
-### Step 5: Storage
-
-Scored items are upserted to Airtable:
-- **New items**: Inserted with all fields
-- **Existing items**: Updated if score changed
-- **Deduplication key**: `source_name + id` (e.g., `hackernews_12345`)
-
-### Step 6: Digest Generation
-
-Items from storage are:
-1. Grouped by matched themes
-2. Sorted by score (descending) within each group
-3. Rendered to Markdown with summary statistics
-
-Output: `digests/2025-12-24.md`
-
-### Step 7: Summary
-
-The pipeline prints a summary showing sources fetched, items processed, storage results, and digest location.
-
----
-
-## Customization Guide
-
-### Adding a New Source
-
-1. **Create a new file** in `src/sources/`:
+Each idea is stored as an `IdeaItem` with the following fields:
 
 ```python
-# src/sources/reddit.py
-from src.sources.base import Source
-from src.models.idea_item import IdeaItem
-
-class RedditSource(Source):
-    @property
-    def name(self) -> str:
-        return "reddit"
+@dataclass
+class IdeaItem:
+    # Core fields
+    id: str                    # Unique ID (e.g., "hn_12345")
+    title: str                 # Idea title
+    description: str           # Description/tagline
+    url: str                   # Link to original
+    source_name: str           # "hackernews" | "producthunt" | "github"
+    source_date: datetime      # When posted on source
+    score: float               # Relevance score (0.0-1.0)
+    tags: list[str]            # Matched themes
     
-    def fetch_items(self, limit: int | None = None) -> list[IdeaItem]:
-        # Fetch from Reddit API
-        # Return list of IdeaItem instances
-        pass
+    # Platform metrics
+    points: int                # HN: upvotes
+    votes: int                 # PH: upvotes
+    comments_count: int        # HN/PH: comments
+    stars: int                 # GitHub: total stars
+    stars_today: int           # GitHub: stars gained today
+    language: str              # GitHub: programming language
+    
+    # Maker information
+    maker_name: str            # Creator's name
+    maker_username: str        # Platform username
+    maker_url: str             # Profile URL
+    maker_avatar: str          # Avatar image URL
+    maker_bio: str             # Short bio/headline
+    maker_twitter: str         # Twitter handle
 ```
 
-2. **Register in `__init__.py`**:
+---
 
-```python
-# src/sources/__init__.py
-from .reddit import RedditSource
+## 🤖 AI Integration
+
+Idea Digest uses **Groq** (free tier) for AI-powered analysis:
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Deep Analysis** | Summary, problem solved, target audience, unique value |
+| **Impact Assessment** | Low/Medium/High potential impact rating |
+| **Tag Suggestions** | AI-generated topic tags |
+| **Maker Insights** | Analysis of creator background (when available) |
+| **Page Insights** | Trends analysis across all visible ideas |
+
+### API Endpoints
+
+```
+POST /api/ai/analyze     # Deep analysis of single idea
+POST /api/ai/insights    # Trends from multiple ideas
+POST /api/ai/summarize   # Quick summary
+GET  /api/ai/status      # Check if AI is configured
 ```
 
-3. **Add to pipeline** in `src/pipeline.py`:
+### Example Response
 
-```python
-sources = [
-    HackerNewsSource(),
-    ProductHuntSource(),
-    GitHubTrendingSource(),
-    RedditSource(),  # Add here
-]
+```json
+{
+  "success": true,
+  "analysis": {
+    "summary": "This tool revolutionizes...",
+    "problem_solved": "Eliminates manual...",
+    "target_audience": "Developers who...",
+    "unique_value": "First solution to...",
+    "potential_impact": "High - addresses a $10B market",
+    "tags": ["developer-tools", "automation", "ai-ml"],
+    "maker_insight": "Founded by ex-Google engineer..."
+  }
+}
 ```
 
-### Tuning Scoring Themes
+---
 
-Edit `src/scoring/themes.py`:
+## 🔄 Source Integrations
+
+### Hacker News
+
+- **API**: Firebase Hacker News API (public, no auth)
+- **Data**: Top/Best stories with points, comments, author
+- **Rate Limit**: ~500 requests/day recommended
+
+### Product Hunt
+
+- **API**: GraphQL API (requires token)
+- **Data**: Daily launches with votes, comments, makers
+- **Rate Limit**: 450 requests/day (free tier)
+
+### GitHub Trending
+
+- **Method**: HTML scraping (no API key needed)
+- **Data**: Trending repos with stars, language, description
+- **Rate Limit**: Respectful scraping with delays
+
+---
+
+## 🛠️ CLI Reference
+
+```bash
+# Basic usage
+python3 main.py [OPTIONS]
+
+# Options
+--limit N              # Items per source (default: 10)
+--sources SRC [SRC...] # Specific sources only
+--dry-run              # Skip storage writes
+--verbose              # Detailed output
+--quiet                # Errors only
+
+# Digest options
+--skip-digest          # Skip digest generation
+--digest-limit N       # Max items in digest
+--digest-days N        # Days to include
+
+# Storage management
+--storage-stats        # Show record count
+--cleanup              # Manual cleanup
+--cleanup-days N       # Retention for cleanup
+
+# Info
+--show-config          # Display configuration
+--version              # Show version
+--help                 # Show help
+```
+
+### Examples
+
+```bash
+# Fetch 15 items from each source
+python3 main.py --limit 15 --verbose
+
+# Only fetch from GitHub
+python3 main.py --sources github
+
+# Check storage status
+python3 main.py --storage-stats
+
+# Clear old records
+python3 main.py --cleanup --cleanup-days 7
+```
+
+---
+
+## 🌐 Web Dashboard
+
+### Routes
+
+| Route | Description |
+|-------|-------------|
+| `/` | Main dashboard with idea grid |
+| `/digests` | List of generated digests |
+| `/digest/<date>` | View specific digest |
+| `/api/stats` | Storage statistics |
+| `/api/ai/*` | AI analysis endpoints |
+
+### Filtering
+
+The dashboard supports filtering by:
+- **Source**: All, Hacker News, Product Hunt, GitHub
+- **Tag**: AI/ML, Developer Tools, etc.
+- **Sort**: Score, Date, Source
+- **Time**: Today, 3 days, 7 days, 2 weeks, month
+
+---
+
+## 📈 Scoring Algorithm
+
+Items are scored using a weighted formula:
+
+```
+score = 0.4 × theme_score + 0.3 × recency_score + 0.3 × popularity_score
+```
+
+| Component | Calculation |
+|-----------|-------------|
+| **Theme** | Keyword matching against interest themes (0-1) |
+| **Recency** | Linear decay: 1.0 (today) → 0.0 (7+ days) |
+| **Popularity** | Normalized engagement (points/votes/stars) |
+
+### Interest Themes
 
 ```python
 INTEREST_THEMES = {
-    "ai-ml": ["gpt", "llm", "machine learning", ...],
-    
-    # Add a new theme
-    "security": [
-        "vulnerability",
-        "exploit",
-        "cybersecurity",
-        "penetration testing",
-    ],
-}
-
-# Adjust theme importance
-THEME_WEIGHTS = {
-    "ai-ml": 1.2,        # Boost AI content
-    "security": 1.1,     # Slightly boost security
-    "default": 1.0,      # Everything else
+    "ai-ml": ["gpt", "llm", "machine learning", "neural", ...],
+    "developer-tools": ["api", "sdk", "cli", "devtools", ...],
+    "startup": ["saas", "b2b", "founder", "mvp", ...],
+    "open-source": ["github", "open source", "oss", ...],
+    # ... more themes
 }
 ```
 
-### Changing Scoring Weights
+---
 
-Edit `src/scoring/scorer.py`:
+## 🗄️ Airtable Setup
+
+### Required Columns
+
+The following columns are auto-created if using the API:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `unique_key` | Text | Deduplication key |
+| `title` | Text | Idea title |
+| `description` | Long text | Description |
+| `url` | URL | Link to source |
+| `source_name` | Single select | Platform name |
+| `score` | Number | Relevance score |
+| `tags` | Multiple select | Matched themes |
+| `points` | Number | HN points |
+| `votes` | Number | PH votes |
+| `stars` | Number | GitHub stars |
+| `maker_name` | Text | Creator name |
+| `maker_avatar` | URL | Avatar URL |
+| ... | ... | ... |
+
+### Free Tier Management
+
+Airtable's free tier allows 1,200 records. Idea Digest auto-manages this:
+
+- **Auto-cleanup**: Deletes records older than `AIRTABLE_RETENTION_DAYS`
+- **Threshold**: Triggers when approaching `AIRTABLE_MAX_RECORDS`
+- **Manual**: `python3 main.py --cleanup --cleanup-days 7`
+
+---
+
+## 🔧 Customization
+
+### Adding a New Source
+
+1. Create `src/sources/your_source.py`:
 
 ```python
-# Adjust component weights (should sum to ~1.0)
-WEIGHT_THEMES = 0.5      # Increase theme importance
-WEIGHT_RECENCY = 0.25    # Decrease recency importance
-WEIGHT_POPULARITY = 0.25
-```
+from src.sources.base import Source
+from src.models.idea_item import IdeaItem
 
-### Using a Different Storage Backend
-
-1. **Create a new storage class**:
-
-```python
-# src/storage/sqlite.py
-from src.storage.base import Storage, UpsertResult
-
-class SQLiteStorage(Storage):
+class YourSource(Source):
     @property
     def name(self) -> str:
-        return "sqlite"
+        return "yoursource"
     
-    def upsert_items(self, items):
-        # Implement SQLite upsert
+    def fetch_items(self, limit: int = 10) -> list[IdeaItem]:
+        # Fetch and return IdeaItems
         pass
-    
-    # ... implement other methods
 ```
 
-2. **Use in pipeline**:
+2. Register in `src/sources/__init__.py`
+3. Add to pipeline in `src/pipeline.py`
+
+### Modifying Scoring
+
+Edit `src/scoring/themes.py` to add themes:
 
 ```python
-# In src/pipeline.py or via dependency injection
-storage = SQLiteStorage(db_path="ideas.db")
+INTEREST_THEMES["your-theme"] = [
+    "keyword1",
+    "keyword2",
+    ...
+]
 ```
-
-### Adjusting Digest Output
-
-Edit `src/digest/generator.py`:
-
-- Change `_theme_emoji()` to customize section emojis
-- Modify `_format_item()` to change item layout
-- Override `_generate_content()` for entirely different formats
 
 ---
 
-## Operational Guide
-
-### Manual Runs
+## 🧪 Testing
 
 ```bash
-# Full pipeline
-python main.py
-
-# Dry-run (no storage/digest writes)
-python main.py --dry-run
-
-# Specific sources only
-python main.py --sources hackernews github
-
-# Limit items (faster testing)
-python main.py --limit-per-source 5
-
-# Verbose output (see what's happening)
-python main.py --verbose
-
-# Show current configuration
-python main.py --show-config
-```
-
-### Scheduled Runs (Cron)
-
-Add to your crontab (`crontab -e`):
-
-```cron
-# Daily at 9 AM
-0 9 * * * cd /path/to/idea-digest && python main.py >> /var/log/idea-digest.log 2>&1
-```
-
-**View logs:**
-```bash
-tail -f /var/log/idea-digest.log
-```
-
-### Scheduled Runs (GitHub Actions)
-
-The workflow at `.github/workflows/daily-digest.yml` runs daily at 9 AM UTC.
-
-**Required secrets** (Settings → Secrets → Actions):
-- `AIRTABLE_API_KEY`
-- `AIRTABLE_BASE_ID`
-
-**Manual trigger:**
-1. Go to Actions tab
-2. Select "Daily Idea Digest"
-3. Click "Run workflow"
-
-**View logs:**
-1. Click on a workflow run
-2. Expand steps to see output
-
-### Where to Look for Failures
-
-| Environment | Logs Location |
-|-------------|---------------|
-| Manual run | Terminal output (`--verbose` for detail) |
-| Local cron | `/var/log/idea-digest.log` or syslog |
-| GitHub Actions | Actions tab → workflow run → step output |
-
-**Common issues:**
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `AIRTABLE_API_KEY is not configured` | Missing env var | Add to `.env` or GitHub Secrets |
-| `Network error` | API unavailable | Retry later, check rate limits |
-| `No items fetched` | All sources failed | Check individual sources with `--sources` |
-
----
-
-## Running Tests
-
-```bash
-# All tests
-pytest tests/
-
-# With verbose output
+# Run all tests
 pytest tests/ -v
 
-# Specific module
+# Run with coverage
+pytest tests/ --cov=src --cov-report=html
+
+# Run specific test file
 pytest tests/test_scoring.py -v
-
-# With coverage
-pytest tests/ --cov=src
 ```
 
 ---
 
-## CLI Reference
+## 📅 Automation
 
-```
-usage: idea-digest [-h] [--dry-run] [--limit-per-source N]
-                   [--since-days {daily,weekly,monthly}]
-                   [--sources SOURCE [SOURCE ...]] [--digest-limit N]
-                   [--digest-days N] [--skip-digest] [--verbose] [--quiet]
-                   [--show-config] [--version]
+### GitHub Actions
 
-Options:
-  --dry-run, -n           Skip storage and digest writes
-  --limit-per-source N    Max items per source (default: 20)
-  --sources SOURCE...     Fetch from specific sources only
-  --since-days            GitHub trending timeframe (daily/weekly/monthly)
-  --digest-limit N        Max items in digest (default: 50)
-  --digest-days N         Days to include in digest (default: 1)
-  --skip-digest           Skip digest generation
-  --verbose, -v           Detailed progress output
-  --quiet, -q             Errors only
-  --show-config           Display current configuration
+The included workflow (`.github/workflows/daily-digest.yml`) runs daily at 9 AM UTC.
+
+**Required Secrets**:
+- `AIRTABLE_API_KEY`
+- `AIRTABLE_BASE_ID`
+- `GROQ_API_KEY` (optional)
+
+### Cron
+
+```bash
+# Add to crontab
+0 9 * * * cd /path/to/idea-digest && python3 main.py >> logs/digest.log 2>&1
 ```
 
 ---
 
-## Contributing
+## 🐛 Troubleshooting
 
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for new functionality
-4. Ensure all tests pass: `pytest tests/`
-5. Submit a pull request
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `AIRTABLE_API_KEY not configured` | Missing env var | Add to `.env` |
+| `422 Unprocessable Entity` | Missing Airtable columns | Run pipeline once to auto-create |
+| `Rate limit exceeded` | Too many API calls | Reduce `--limit` or add delays |
+| `AI not configured` | Missing `GROQ_API_KEY` | Add key or AI features disabled |
+| `No items fetched` | Source failures | Check with `--sources X --verbose` |
 
 ---
 
-## License
+## 📄 License
 
-MIT License — see LICENSE file for details.
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- [Hacker News API](https://github.com/HackerNews/API)
+- [Product Hunt API](https://api.producthunt.com/v2/docs)
+- [Groq](https://groq.com) for free AI inference
+- [Airtable](https://airtable.com) for database hosting
+
+---
+
+<div align="center">
+
+**Built with ❤️ for idea enthusiasts**
+
+[Report Bug](https://github.com/yourusername/idea-digest/issues) · [Request Feature](https://github.com/yourusername/idea-digest/issues)
+
+</div>
