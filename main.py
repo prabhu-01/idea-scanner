@@ -33,6 +33,8 @@ from src.pipeline import (
 )
 from src.config import (
     DEFAULT_LIMIT_PER_SOURCE,
+    AIRTABLE_MAX_RECORDS,
+    AIRTABLE_RETENTION_DAYS,
     print_config_summary,
     validate_config,
 )
@@ -123,6 +125,33 @@ Examples:
         help="Only show errors and final summary",
     )
     
+    # Storage management options
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Run storage cleanup to stay under free tier limit (deletes old records)",
+    )
+    
+    parser.add_argument(
+        "--cleanup-days",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"Days to retain during cleanup (default: {AIRTABLE_RETENTION_DAYS})",
+    )
+    
+    parser.add_argument(
+        "--no-auto-cleanup",
+        action="store_true",
+        help="Disable automatic cleanup before storage",
+    )
+    
+    parser.add_argument(
+        "--storage-stats",
+        action="store_true",
+        help="Show storage statistics (record count) and exit",
+    )
+    
     # Info options
     parser.add_argument(
         "--show-config",
@@ -164,6 +193,74 @@ def print_result_summary(result: PipelineResult, verbose: bool = False) -> None:
         print("\nTop scoring items would be shown here in verbose mode.")
 
 
+def run_storage_stats() -> int:
+    """Show storage statistics."""
+    from src.storage import AirtableStorage
+    from src.config import AIRTABLE_API_KEY
+    
+    if not AIRTABLE_API_KEY:
+        print("❌ AIRTABLE_API_KEY not configured")
+        return 1
+    
+    storage = AirtableStorage()
+    count = storage.get_record_count()
+    
+    print("=" * 60)
+    print("STORAGE STATISTICS")
+    print("=" * 60)
+    print(f"  Current records:    {count}")
+    print(f"  Free tier limit:    1,200")
+    print(f"  Configured max:     {AIRTABLE_MAX_RECORDS}")
+    print(f"  Available space:    {1200 - count} records")
+    print(f"  Usage:              {count / 1200 * 100:.1f}%")
+    
+    if count >= 1000:
+        print("\n⚠️  Warning: Approaching free tier limit!")
+        print(f"   Consider running: python main.py --cleanup")
+    elif count >= 1200:
+        print("\n❌ Error: At or over free tier limit!")
+        print(f"   Run: python main.py --cleanup --cleanup-days 14")
+    else:
+        print("\n✓ Storage is healthy")
+    
+    print("=" * 60)
+    return 0
+
+
+def run_cleanup(retention_days: int) -> int:
+    """Run manual storage cleanup."""
+    from src.storage import AirtableStorage
+    from src.config import AIRTABLE_API_KEY
+    
+    if not AIRTABLE_API_KEY:
+        print("❌ AIRTABLE_API_KEY not configured")
+        return 1
+    
+    print("=" * 60)
+    print("STORAGE CLEANUP")
+    print("=" * 60)
+    print(f"  Retention period: {retention_days} days")
+    print(f"  Target max:       {AIRTABLE_MAX_RECORDS} records")
+    print()
+    
+    storage = AirtableStorage()
+    result = storage.cleanup_for_free_tier(
+        max_records=AIRTABLE_MAX_RECORDS,
+        retention_days=retention_days,
+    )
+    
+    print()
+    print("Results:")
+    print(f"  Initial count:  {result['initial_count']}")
+    print(f"  Final count:    {result['final_count']}")
+    print(f"  Deleted:        {result['deleted']}")
+    print(f"  Failed:         {result['failed']}")
+    print(f"  Action:         {result['action']}")
+    print("=" * 60)
+    
+    return 0 if result['failed'] == 0 else 1
+
+
 def main(argv: list = None) -> int:
     """
     Main entry point.
@@ -181,6 +278,16 @@ def main(argv: list = None) -> int:
     if args.show_config:
         show_config()
         return 0
+    
+    # Handle --storage-stats
+    if args.storage_stats:
+        return run_storage_stats()
+    
+    # Handle --cleanup (standalone)
+    if args.cleanup and args.dry_run:
+        # Just cleanup, don't run pipeline
+        retention = args.cleanup_days or AIRTABLE_RETENTION_DAYS
+        return run_cleanup(retention)
     
     # Print header (unless quiet)
     if not args.quiet:

@@ -46,6 +46,25 @@ class IdeaItem:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     
+    # Platform-specific metrics (native engagement signals)
+    # These store raw values from each platform for display purposes
+    points: Optional[int] = None          # HN: points/upvotes
+    comments_count: Optional[int] = None  # HN/PH: comment count
+    votes: Optional[int] = None           # PH: upvote count
+    stars: Optional[int] = None           # GitHub: total stars
+    stars_today: Optional[int] = None     # GitHub: stars gained today/this week
+    language: Optional[str] = None        # GitHub: programming language
+    
+    # Maker/Creator information
+    maker_name: Optional[str] = None      # Name of creator/maker
+    maker_username: Optional[str] = None  # Username on the platform
+    maker_url: Optional[str] = None       # Profile URL
+    maker_avatar: Optional[str] = None    # Avatar/profile image URL
+    maker_bio: Optional[str] = None       # Short bio/headline
+    maker_twitter: Optional[str] = None   # Twitter handle (if available)
+    forks: Optional[int] = None           # GitHub: fork count
+    watchers: Optional[int] = None        # GitHub: watcher count
+    
     def __post_init__(self) -> None:
         """Validate fields after initialization."""
         self.validate()

@@ -4,5 +4,6 @@ feedparser
 beautifulsoup4
 playwright
 pytest
+flask
 
 

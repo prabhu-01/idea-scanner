@@ -315,29 +315,22 @@ class GitHubTrendingSource(Source):
         if not full_name or not url:
             return None
         
-        # Build title
+        # Build title (repo name without language suffix - we store language separately)
         title = full_name
-        if repo.get("language"):
-            title = f"{full_name} ({repo['language']})"
         
-        # Build description with stats
-        desc_parts = []
-        if repo.get("description"):
-            desc_parts.append(repo["description"])
-        
-        stats = []
-        if repo.get("stars"):
-            stats.append(f"⭐ {repo['stars']:,}")
-        if repo.get("stars_today"):
-            stats.append(f"+{repo['stars_today']} today")
-        
-        if stats:
-            desc_parts.append(" | ".join(stats))
-        
-        description = " — ".join(desc_parts) if desc_parts else ""
+        # Description is just the repo description, without stats (we show those separately)
+        description = repo.get("description", "")
         
         # Generate unique ID
         item_id = full_name.replace("/", "_")
+        
+        # Extract platform-specific metrics
+        stars = repo.get("stars", 0)
+        stars_today = repo.get("stars_today", 0)
+        language = repo.get("language", "")
+        
+        # Extract maker/owner info
+        owner = repo.get("owner", "")
         
         try:
             return IdeaItem(
@@ -349,6 +342,14 @@ class GitHubTrendingSource(Source):
                 source_date=datetime.now(),  # Trending is "now"
                 score=0.0,
                 tags=[],
+                # Platform-specific metrics
+                stars=stars,
+                stars_today=stars_today,
+                language=language,
+                # Maker info
+                maker_username=owner if owner else None,
+                maker_url=f"https://github.com/{owner}" if owner else None,
+                maker_avatar=f"https://github.com/{owner}.png" if owner else None,
             )
         except ValueError as e:
             print(f"[{self.name}] Invalid repo {full_name}: {e}")

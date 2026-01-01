@@ -35,6 +35,9 @@ from src.storage import AirtableStorage, MockAirtableStorage
 from src.config import (
     AIRTABLE_API_KEY,
     DEFAULT_LIMIT_PER_SOURCE,
+    AIRTABLE_MAX_RECORDS,
+    AIRTABLE_RETENTION_DAYS,
+    AIRTABLE_AUTO_CLEANUP,
     print_config_summary,
     validate_config,
 )
@@ -56,6 +59,16 @@ class SourceResult:
 
 
 @dataclass
+class CleanupResult:
+    """Result of storage cleanup operation."""
+    initial_count: int = 0
+    final_count: int = 0
+    deleted: int = 0
+    failed: int = 0
+    action: str = "none"
+
+
+@dataclass
 class PipelineResult:
     """Complete result of a pipeline execution."""
     started_at: datetime
@@ -71,6 +84,9 @@ class PipelineResult:
     # Storage results (None if dry-run)
     storage_result: Optional[UpsertResult] = None
     dry_run: bool = False
+    
+    # Cleanup results (None if no cleanup performed)
+    cleanup_result: Optional[CleanupResult] = None
     
     # Digest results (None if dry-run or disabled)
     digest_result: Optional[DigestResult] = None
@@ -119,6 +135,15 @@ class PipelineResult:
             f"Total fetched: {self.total_items_fetched}",
             f"Total scored:  {self.total_items_scored}",
         ])
+        
+        if self.cleanup_result and self.cleanup_result.deleted > 0:
+            lines.extend([
+                "",
+                "Cleanup (Free Tier Management):",
+                f"  Records before: {self.cleanup_result.initial_count}",
+                f"  Records after:  {self.cleanup_result.final_count}",
+                f"  Deleted:        {self.cleanup_result.deleted}",
+            ])
         
         if self.storage_result and not self.dry_run:
             lines.extend([
@@ -413,6 +438,25 @@ class IdeaDigestPipeline:
             # Step 4: Store (unless dry-run)
             if not self.config.dry_run and scored_items:
                 storage = self._get_storage()
+                
+                # Step 4a: Auto-cleanup for free tier management
+                if AIRTABLE_AUTO_CLEANUP and hasattr(storage, 'cleanup_for_free_tier'):
+                    if self.config.verbose:
+                        print(f"Running auto-cleanup (max: {AIRTABLE_MAX_RECORDS}, retention: {AIRTABLE_RETENTION_DAYS} days)...")
+                    
+                    cleanup_dict = storage.cleanup_for_free_tier(
+                        max_records=AIRTABLE_MAX_RECORDS,
+                        retention_days=AIRTABLE_RETENTION_DAYS,
+                    )
+                    result.cleanup_result = CleanupResult(
+                        initial_count=cleanup_dict.get("initial_count", 0),
+                        final_count=cleanup_dict.get("final_count", 0),
+                        deleted=cleanup_dict.get("deleted", 0),
+                        failed=cleanup_dict.get("failed", 0),
+                        action=cleanup_dict.get("action", "none"),
+                    )
+                
+                # Step 4b: Store items
                 if self.config.verbose:
                     print(f"Storing {len(scored_items)} items to {storage.name}...")
                 

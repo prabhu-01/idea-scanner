@@ -184,6 +184,13 @@ class HackerNewsSource(Source):
             except (ValueError, TypeError, OSError):
                 pass
         
+        # Extract platform-specific metrics
+        points = raw.get("score")
+        comments_count = raw.get("descendants")
+        
+        # Extract maker/author info
+        author = raw.get("by", "")
+        
         # Build description from available info
         description = self._build_description(raw)
         
@@ -197,6 +204,12 @@ class HackerNewsSource(Source):
                 source_date=source_date,
                 score=0.0,  # Score will be set by scoring module later
                 tags=[],    # Tags will be set by scoring module later
+                # Platform-specific metrics
+                points=points,
+                comments_count=comments_count,
+                # Maker info
+                maker_username=author if author else None,
+                maker_url=f"https://news.ycombinator.com/user?id={author}" if author else None,
             )
         except ValueError as e:
             # Validation failed in IdeaItem

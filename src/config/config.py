@@ -73,6 +73,34 @@ GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
 
 
 # =============================================================================
+# AI Integration (Groq - Free)
+# =============================================================================
+
+# Groq API key for AI summarization (free at console.groq.com)
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+
+# AI model to use (llama-3.3-70b-versatile is fast and good)
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+
+# =============================================================================
+# Airtable Free Tier Management
+# =============================================================================
+
+# Maximum records to keep (Airtable free tier limit is 1,200)
+# Default: 1000 (leaves 200 buffer for safety)
+AIRTABLE_MAX_RECORDS: int = int(os.getenv("AIRTABLE_MAX_RECORDS", "1000"))
+
+# Number of days to retain records before cleanup
+# Default: 30 days (keeps ~1 month of ideas)
+AIRTABLE_RETENTION_DAYS: int = int(os.getenv("AIRTABLE_RETENTION_DAYS", "30"))
+
+# Auto-cleanup before each pipeline run (recommended for free tier)
+# Default: true
+AIRTABLE_AUTO_CLEANUP: bool = os.getenv("AIRTABLE_AUTO_CLEANUP", "true").lower() == "true"
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -123,4 +151,7 @@ def print_config_summary() -> None:
     print(f"  DEFAULT_LIMIT_PER_SOURCE: {DEFAULT_LIMIT_PER_SOURCE}")
     print(f"  REQUEST_TIMEOUT: {REQUEST_TIMEOUT}s")
     print(f"  SCRAPE_DELAY: {SCRAPE_DELAY}s")
+    print(f"  AIRTABLE_MAX_RECORDS: {AIRTABLE_MAX_RECORDS}")
+    print(f"  AIRTABLE_RETENTION_DAYS: {AIRTABLE_RETENTION_DAYS}")
+    print(f"  AIRTABLE_AUTO_CLEANUP: {AIRTABLE_AUTO_CLEANUP}")
 

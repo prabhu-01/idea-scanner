@@ -149,18 +149,47 @@ class AirtableStorage(Storage):
         if item.description:
             fields["description"] = item.description
         
+        # Airtable date fields expect YYYY-MM-DD format (not full ISO timestamp)
         if item.source_date:
-            fields["source_date"] = item.source_date.isoformat()
+            fields["source_date"] = item.source_date.strftime("%Y-%m-%d")
         
         if item.tags:
             # Airtable multiple select expects list of strings
             fields["tags"] = item.tags
         
         if item.created_at:
-            fields["created_at"] = item.created_at.isoformat()
+            fields["created_at"] = item.created_at.strftime("%Y-%m-%d")
         
         if item.updated_at:
-            fields["updated_at"] = item.updated_at.isoformat()
+            fields["updated_at"] = item.updated_at.strftime("%Y-%m-%d")
+        
+        # Platform-specific metrics (store as numbers in Airtable)
+        if item.points is not None:
+            fields["points"] = item.points
+        if item.comments_count is not None:
+            fields["comments_count"] = item.comments_count
+        if item.votes is not None:
+            fields["votes"] = item.votes
+        if item.stars is not None:
+            fields["stars"] = item.stars
+        if item.stars_today is not None:
+            fields["stars_today"] = item.stars_today
+        if item.language:
+            fields["language"] = item.language
+        
+        # Maker/creator information
+        if item.maker_name:
+            fields["maker_name"] = item.maker_name
+        if item.maker_username:
+            fields["maker_username"] = item.maker_username
+        if item.maker_url:
+            fields["maker_url"] = item.maker_url
+        if item.maker_avatar:
+            fields["maker_avatar"] = item.maker_avatar
+        if item.maker_bio:
+            fields["maker_bio"] = item.maker_bio
+        if item.maker_twitter:
+            fields["maker_twitter"] = item.maker_twitter
         
         return fields
     
@@ -225,6 +254,20 @@ class AirtableStorage(Storage):
                 tags=fields.get("tags", []),
                 created_at=created_at,
                 updated_at=updated_at,
+                # Platform-specific metrics
+                points=fields.get("points"),
+                comments_count=fields.get("comments_count"),
+                votes=fields.get("votes"),
+                stars=fields.get("stars"),
+                stars_today=fields.get("stars_today"),
+                language=fields.get("language"),
+                # Maker/creator information
+                maker_name=fields.get("maker_name"),
+                maker_username=fields.get("maker_username"),
+                maker_url=fields.get("maker_url"),
+                maker_avatar=fields.get("maker_avatar"),
+                maker_bio=fields.get("maker_bio"),
+                maker_twitter=fields.get("maker_twitter"),
             )
         except Exception:
             return None
@@ -521,6 +564,216 @@ class AirtableStorage(Storage):
             return self.airtable_record_to_item(record)
         
         return None
+    
+    # =========================================================================
+    # Free Tier Management - Stay Under 1,200 Records
+    # =========================================================================
+    
+    def get_record_count(self) -> int:
+        """
+        Get the total number of records in the table.
+        
+        Returns:
+            Total record count.
+        """
+        self._validate_config()
+        
+        try:
+            # Airtable doesn't have a direct count endpoint, 
+            # so we fetch minimal data and count
+            count = 0
+            offset = None
+            
+            while True:
+                self._rate_limit()
+                
+                params = {
+                    "pageSize": 100,
+                    "fields[]": "unique_key",  # Minimal field to reduce payload
+                }
+                if offset:
+                    params["offset"] = offset
+                
+                response = requests.get(
+                    self._base_url,
+                    headers=self._headers,
+                    params=params,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                count += len(data.get("records", []))
+                offset = data.get("offset")
+                
+                if not offset:
+                    break
+            
+            return count
+            
+        except Exception as e:
+            print(f"[airtable] Error getting record count: {e}")
+            return -1
+    
+    def delete_records_older_than(self, days: int) -> Dict[str, int]:
+        """
+        Delete records older than specified days (rolling window cleanup).
+        
+        This helps stay under Airtable's free tier limit of 1,200 records.
+        
+        Args:
+            days: Delete records older than this many days.
+            
+        Returns:
+            Dict with 'deleted' and 'failed' counts.
+        """
+        self._validate_config()
+        
+        cutoff = datetime.now() - timedelta(days=days)
+        cutoff_str = cutoff.strftime("%Y-%m-%d")
+        
+        # Find old records
+        filter_formula = f"IS_BEFORE({{created_at}}, '{cutoff_str}')"
+        
+        deleted = 0
+        failed = 0
+        
+        try:
+            # Airtable allows batch delete of up to 10 records at a time
+            while True:
+                self._rate_limit()
+                
+                # Get batch of old records
+                params = {
+                    "filterByFormula": filter_formula,
+                    "pageSize": 10,
+                    "fields[]": "unique_key",
+                }
+                
+                response = requests.get(
+                    self._base_url,
+                    headers=self._headers,
+                    params=params,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                response.raise_for_status()
+                
+                records = response.json().get("records", [])
+                if not records:
+                    break
+                
+                # Delete this batch
+                record_ids = [r["id"] for r in records]
+                delete_result = self._delete_records_batch(record_ids)
+                
+                deleted += delete_result["deleted"]
+                failed += delete_result["failed"]
+                
+                if delete_result["failed"] > 0:
+                    break  # Stop on errors
+                    
+        except Exception as e:
+            print(f"[airtable] Error during cleanup: {e}")
+        
+        return {"deleted": deleted, "failed": failed}
+    
+    def _delete_records_batch(self, record_ids: List[str]) -> Dict[str, int]:
+        """
+        Delete a batch of records by their Airtable record IDs.
+        
+        Args:
+            record_ids: List of Airtable record IDs (max 10).
+            
+        Returns:
+            Dict with 'deleted' and 'failed' counts.
+        """
+        if not record_ids:
+            return {"deleted": 0, "failed": 0}
+        
+        self._rate_limit()
+        
+        try:
+            # Airtable batch delete uses query params: records[]=id1&records[]=id2
+            params = {"records[]": record_ids}
+            
+            response = requests.delete(
+                self._base_url,
+                headers=self._headers,
+                params=params,
+                timeout=REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            deleted_count = len(result.get("records", []))
+            
+            return {"deleted": deleted_count, "failed": len(record_ids) - deleted_count}
+            
+        except Exception as e:
+            print(f"[airtable] Error deleting batch: {e}")
+            return {"deleted": 0, "failed": len(record_ids)}
+    
+    def cleanup_for_free_tier(
+        self,
+        max_records: int = 1000,
+        retention_days: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        Smart cleanup to stay under Airtable free tier limits.
+        
+        Strategy:
+        1. Check current record count
+        2. If under max_records, do nothing
+        3. If over, delete oldest records beyond retention_days
+        4. If still over, delete lowest-scoring old records
+        
+        Args:
+            max_records: Target maximum records (default: 1000, leaves 200 buffer)
+            retention_days: Minimum days to keep records (default: 30)
+            
+        Returns:
+            Dict with cleanup statistics.
+        """
+        self._validate_config()
+        
+        result = {
+            "initial_count": 0,
+            "final_count": 0,
+            "deleted": 0,
+            "failed": 0,
+            "action": "none",
+        }
+        
+        # Step 1: Check current count
+        current_count = self.get_record_count()
+        if current_count < 0:
+            result["action"] = "error_counting"
+            return result
+        
+        result["initial_count"] = current_count
+        
+        # Step 2: If under limit, no action needed
+        if current_count <= max_records:
+            result["final_count"] = current_count
+            result["action"] = "none_needed"
+            print(f"[airtable] Record count ({current_count}) is under limit ({max_records}). No cleanup needed.")
+            return result
+        
+        # Step 3: Delete old records
+        print(f"[airtable] Record count ({current_count}) exceeds limit ({max_records}). Starting cleanup...")
+        
+        cleanup_result = self.delete_records_older_than(retention_days)
+        result["deleted"] = cleanup_result["deleted"]
+        result["failed"] = cleanup_result["failed"]
+        result["action"] = "deleted_old_records"
+        
+        # Step 4: Verify final count
+        final_count = self.get_record_count()
+        result["final_count"] = final_count if final_count >= 0 else current_count - result["deleted"]
+        
+        print(f"[airtable] Cleanup complete. Deleted {result['deleted']} records. New count: {result['final_count']}")
+        
+        return result
 
 
 class MockAirtableStorage(Storage):
@@ -585,4 +838,44 @@ class MockAirtableStorage(Storage):
     def count(self) -> int:
         """Return number of stored records (for testing)."""
         return len(self._records)
+    
+    def get_record_count(self) -> int:
+        """Get total record count."""
+        return len(self._records)
+    
+    def delete_records_older_than(self, days: int) -> Dict[str, int]:
+        """Delete records older than specified days."""
+        cutoff = datetime.now() - timedelta(days=days)
+        to_delete = [
+            key for key, item in self._records.items()
+            if item.created_at < cutoff
+        ]
+        for key in to_delete:
+            del self._records[key]
+        return {"deleted": len(to_delete), "failed": 0}
+    
+    def cleanup_for_free_tier(
+        self,
+        max_records: int = 1000,
+        retention_days: int = 30,
+    ) -> Dict[str, Any]:
+        """Mock cleanup for testing."""
+        initial = len(self._records)
+        if initial <= max_records:
+            return {
+                "initial_count": initial,
+                "final_count": initial,
+                "deleted": 0,
+                "failed": 0,
+                "action": "none_needed",
+            }
+        
+        result = self.delete_records_older_than(retention_days)
+        return {
+            "initial_count": initial,
+            "final_count": len(self._records),
+            "deleted": result["deleted"],
+            "failed": 0,
+            "action": "deleted_old_records",
+        }
 
