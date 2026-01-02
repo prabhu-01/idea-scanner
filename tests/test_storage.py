@@ -713,3 +713,155 @@ class TestConfigValidation:
         # Should not raise
         storage._validate_config()
 
+
+# =============================================================================
+# Test Search Functionality
+# =============================================================================
+
+class TestSearchItems:
+    """Tests for the search_items method."""
+    
+    def test_search_returns_list(self, mock_storage):
+        """Search returns a list."""
+        results = mock_storage.search_items("test")
+        assert isinstance(results, list)
+    
+    def test_search_empty_query_returns_empty(self, airtable_storage):
+        """Empty query returns empty list."""
+        results = airtable_storage.search_items("")
+        assert results == []
+    
+    def test_search_whitespace_query_returns_empty(self, airtable_storage):
+        """Whitespace-only query returns empty list."""
+        results = airtable_storage.search_items("   ")
+        assert results == []
+    
+    @patch("requests.get")
+    def test_search_calls_api_with_filter(self, mock_get, airtable_storage):
+        """Search builds correct filter formula."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"records": []}
+        mock_get.return_value = mock_response
+        
+        airtable_storage.search_items("python")
+        
+        assert mock_get.called
+        call_args = mock_get.call_args
+        params = call_args.kwargs.get("params", {})
+        
+        assert "filterByFormula" in params
+        formula = params["filterByFormula"]
+        assert "SEARCH" in formula
+        assert "python" in formula.lower()
+    
+    @patch("requests.get")
+    def test_search_with_source_filter(self, mock_get, airtable_storage):
+        """Search includes source filter when specified."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"records": []}
+        mock_get.return_value = mock_response
+        
+        airtable_storage.search_items("test", source_filter="hackernews")
+        
+        call_args = mock_get.call_args
+        params = call_args.kwargs.get("params", {})
+        formula = params["filterByFormula"]
+        
+        assert "hackernews" in formula
+    
+    @patch("requests.get")
+    def test_search_returns_items(self, mock_get, airtable_storage, sample_item):
+        """Search returns IdeaItems from results."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "records": [
+                {
+                    "id": "rec123",
+                    "fields": {
+                        "unique_key": "hn_12345",
+                        "title": "Python Article",
+                        "url": "https://example.com",
+                        "source_name": "hackernews",
+                        "score": 0.8,
+                    }
+                }
+            ]
+        }
+        mock_get.return_value = mock_response
+        
+        results = airtable_storage.search_items("python")
+        
+        assert len(results) == 1
+        assert results[0].title == "Python Article"
+        assert isinstance(results[0], IdeaItem)
+    
+    @patch("requests.get")
+    def test_search_respects_limit(self, mock_get, airtable_storage):
+        """Search respects limit parameter."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"records": []}
+        mock_get.return_value = mock_response
+        
+        airtable_storage.search_items("test", limit=25)
+        
+        call_args = mock_get.call_args
+        params = call_args.kwargs.get("params", {})
+        
+        assert params.get("maxRecords") == 25
+    
+    @patch("requests.get")
+    def test_search_handles_api_error(self, mock_get, airtable_storage):
+        """Search handles API errors gracefully."""
+        mock_get.side_effect = Exception("Network error")
+        
+        results = airtable_storage.search_items("test")
+        
+        assert results == []
+    
+    def test_search_sanitizes_query(self, airtable_storage):
+        """Search sanitizes special characters in query."""
+        # This tests the method builds without crashing
+        # The actual sanitization is verified by checking no exception is raised
+        with patch("requests.get") as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"records": []}
+            mock_get.return_value = mock_response
+            
+            # These should not crash
+            airtable_storage.search_items("test's query")
+            airtable_storage.search_items('test "quoted" query')
+            airtable_storage.search_items("test & special < chars >")
+
+
+class TestBaseStorageSearch:
+    """Tests for base Storage class search method."""
+    
+    def test_base_storage_search_returns_empty(self):
+        """Base Storage.search_items returns empty list by default."""
+        from src.storage.base import Storage
+        
+        # Create a minimal concrete implementation
+        class MinimalStorage(Storage):
+            @property
+            def name(self):
+                return "minimal"
+            
+            def upsert_items(self, items):
+                pass
+            
+            def get_recent_items(self, days=7):
+                return []
+            
+            def get_top_items(self, limit=10, min_score=0.0):
+                return []
+        
+        storage = MinimalStorage()
+        results = storage.search_items("test")
+        
+        assert results == []
+

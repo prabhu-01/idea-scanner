@@ -565,6 +565,68 @@ class AirtableStorage(Storage):
         
         return None
     
+    def search_items(
+        self,
+        query: str,
+        limit: int = 50,
+        source_filter: Optional[str] = None,
+    ) -> List[IdeaItem]:
+        """
+        Search for items matching a text query.
+        
+        Searches across title and description fields using Airtable's
+        SEARCH function. Results are sorted by score descending.
+        
+        Args:
+            query: Search query string.
+            limit: Maximum number of results (default 50).
+            source_filter: Optional source name to filter by.
+            
+        Returns:
+            List of matching IdeaItem instances.
+        """
+        self._validate_config()
+        
+        if not query or not query.strip():
+            return []
+        
+        # Sanitize query for Airtable formula (escape quotes)
+        sanitized_query = query.strip().replace('"', '\\"').replace("'", "\\'")
+        
+        # Build Airtable filter formula using SEARCH
+        # SEARCH returns position (1-indexed) or 0 if not found
+        # We search in both title and description (case-insensitive via LOWER)
+        search_conditions = [
+            f'SEARCH(LOWER("{sanitized_query}"), LOWER({{title}})) > 0',
+            f'SEARCH(LOWER("{sanitized_query}"), LOWER({{description}})) > 0',
+        ]
+        
+        filter_formula = f"OR({', '.join(search_conditions)})"
+        
+        # Add source filter if specified
+        if source_filter:
+            filter_formula = f"AND({filter_formula}, {{source_name}} = '{source_filter}')"
+        
+        try:
+            records = self._list_records(
+                filter_formula=filter_formula,
+                sort_field="score",
+                sort_direction="desc",
+                max_records=limit,
+            )
+            
+            items = []
+            for record in records:
+                item = self.airtable_record_to_item(record)
+                if item:
+                    items.append(item)
+            
+            return items
+            
+        except Exception as e:
+            print(f"[{self.name}] Search error: {e}")
+            return []
+    
     # =========================================================================
     # Free Tier Management - Stay Under 1,200 Records
     # =========================================================================

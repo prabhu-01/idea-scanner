@@ -8,7 +8,10 @@ Or: cd web && python app.py
 """
 
 import sys
+import threading
 from pathlib import Path
+from dataclasses import dataclass, asdict
+from typing import Optional
 
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,14 +20,48 @@ from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta
 from src.storage.airtable import AirtableStorage
 from src.services.ai_summarizer import get_summarizer
+from src.pipeline import run_pipeline, PipelineResult
 from src.config import (
     AIRTABLE_API_KEY,
     AIRTABLE_MAX_RECORDS,
     AIRTABLE_RETENTION_DAYS,
     GROQ_API_KEY,
+    DEFAULT_LIMIT_PER_SOURCE,
 )
 
 app = Flask(__name__)
+
+
+# =============================================================================
+# Pipeline Status Tracking
+# =============================================================================
+
+@dataclass
+class PipelineStatus:
+    """Tracks the status of a pipeline run."""
+    running: bool = False
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    status: str = "idle"  # idle, running, completed, failed
+    message: str = ""
+    result: Optional[dict] = None
+    logs: list = None  # Terminal-style log messages
+    
+    def __post_init__(self):
+        if self.logs is None:
+            self.logs = []
+    
+    def log(self, message: str, level: str = "info"):
+        """Add a log entry with timestamp."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.logs.append({
+            "time": timestamp,
+            "level": level,  # info, success, warning, error
+            "message": message
+        })
+
+# Global pipeline status (simple in-memory tracking)
+_pipeline_status = PipelineStatus()
 
 def get_storage():
     """Get configured Airtable storage."""
@@ -73,21 +110,31 @@ def index():
     # Get stats
     record_count = storage.get_record_count()
     
-    # Get last updated time (most recent item's created_at)
+    # Get last sync time from pipeline (regardless of success/failure)
     last_updated = None
-    if all_items:
-        most_recent = max(all_items, key=lambda x: x.created_at or datetime.min)
-        if most_recent.created_at:
-            # Format as relative time
-            diff = datetime.now() - most_recent.created_at
-            if diff.days > 0:
-                last_updated = f"{diff.days}d ago"
-            elif diff.seconds >= 3600:
-                last_updated = f"{diff.seconds // 3600}h ago"
-            elif diff.seconds >= 60:
-                last_updated = f"{diff.seconds // 60}m ago"
-            else:
+    
+    if _pipeline_status.finished_at:
+        # Pipeline has run in this session - use that time
+        try:
+            diff = datetime.now() - _pipeline_status.finished_at
+            total_seconds = int(diff.total_seconds())
+            
+            if total_seconds < 60:
                 last_updated = "just now"
+            elif total_seconds < 3600:
+                last_updated = f"{total_seconds // 60}m ago"
+            elif total_seconds < 86400:
+                last_updated = f"{total_seconds // 3600}h ago"
+            else:
+                last_updated = f"{diff.days}d ago"
+        except Exception:
+            last_updated = "recently"
+    else:
+        # Pipeline hasn't run yet in this session - show "ready" or count
+        if all_items:
+            last_updated = f"{len(all_items)} ideas loaded"
+        else:
+            last_updated = "ready"
     
     return render_template(
         "index.html",
@@ -319,6 +366,229 @@ def api_ai_status():
         "available": summarizer.is_available(),
         "model": summarizer.model if summarizer.is_available() else None
     })
+
+
+@app.route("/api/search")
+def api_search():
+    """Search for ideas matching a query."""
+    storage = get_storage()
+    
+    if not storage:
+        return jsonify({"error": "Airtable not configured"}), 500
+    
+    query = request.args.get("q", "").strip()
+    source = request.args.get("source", None)
+    limit = min(int(request.args.get("limit", 50)), 100)  # Cap at 100
+    
+    if not query:
+        return jsonify({"error": "Query parameter 'q' is required"}), 400
+    
+    if source == "all":
+        source = None
+    
+    items = storage.search_items(query=query, limit=limit, source_filter=source)
+    
+    # Convert items to JSON-serializable format
+    results = []
+    for item in items:
+        results.append({
+            "id": item.id,
+            "title": item.title,
+            "description": item.description or "",
+            "url": item.url,
+            "source_name": item.source_name,
+            "score": item.score,
+            "tags": item.tags or [],
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "points": item.points,
+            "votes": item.votes,
+            "stars": item.stars,
+            "comments_count": item.comments_count,
+            "maker_name": item.maker_name,
+            "maker_avatar": item.maker_avatar,
+        })
+    
+    return jsonify({
+        "success": True,
+        "query": query,
+        "count": len(results),
+        "results": results,
+    })
+
+
+# =============================================================================
+# Pipeline API Endpoints
+# =============================================================================
+
+def _run_pipeline_async(limit: int):
+    """Run pipeline in background thread with terminal-style logging."""
+    global _pipeline_status
+    import time
+    
+    try:
+        _pipeline_status.status = "running"
+        _pipeline_status.log("$ idea-digest --run", "cmd")
+        _pipeline_status.log("Initializing Idea Digest Pipeline v1.0", "info")
+        time.sleep(0.3)
+        
+        _pipeline_status.log(f"Config: limit_per_source={limit}, dry_run=false", "info")
+        _pipeline_status.message = "Connecting to sources..."
+        time.sleep(0.2)
+        
+        _pipeline_status.log("→ Connecting to Hacker News API...", "info")
+        time.sleep(0.1)
+        _pipeline_status.log("→ Connecting to Product Hunt API...", "info")
+        time.sleep(0.1)
+        _pipeline_status.log("→ Connecting to GitHub Trending...", "info")
+        time.sleep(0.2)
+        
+        _pipeline_status.log("Sources initialized ✓", "success")
+        _pipeline_status.message = "Fetching ideas from sources..."
+        
+        # Run the pipeline
+        result = run_pipeline(
+            limit_per_source=limit,
+            dry_run=False,
+            verbose=False,
+            skip_digest=False,
+        )
+        
+        # Log source results
+        for sr in result.source_results:
+            if sr.success:
+                _pipeline_status.log(
+                    f"[{sr.source_name}] Fetched {sr.items_fetched} items ({sr.duration_ms:.0f}ms)", 
+                    "success"
+                )
+            else:
+                _pipeline_status.log(
+                    f"[{sr.source_name}] Failed: {sr.error}", 
+                    "error"
+                )
+        
+        _pipeline_status.message = "Scoring and tagging items..."
+        _pipeline_status.log(f"Scoring {result.total_items_fetched} items...", "info")
+        time.sleep(0.2)
+        _pipeline_status.log(f"Applied interest scoring ✓", "success")
+        
+        # Storage results
+        if result.storage_result:
+            _pipeline_status.message = "Saving to Airtable..."
+            _pipeline_status.log("Connecting to Airtable...", "info")
+            time.sleep(0.1)
+            
+            inserted = result.storage_result.inserted
+            updated = result.storage_result.updated
+            failed = result.storage_result.failed
+            
+            if inserted > 0:
+                _pipeline_status.log(f"Inserted {inserted} new records", "success")
+            if updated > 0:
+                _pipeline_status.log(f"Updated {updated} existing records", "info")
+            if failed > 0:
+                _pipeline_status.log(f"Failed to save {failed} records", "warning")
+        
+        # Digest
+        if result.digest_result:
+            _pipeline_status.log(f"Generated digest: {result.digest_result.filename}", "success")
+        
+        # Convert result to dict
+        _pipeline_status.result = {
+            "sources_succeeded": result.sources_succeeded,
+            "sources_failed": result.sources_failed,
+            "total_items_fetched": result.total_items_fetched,
+            "total_items_scored": result.total_items_scored,
+            "storage": {
+                "inserted": result.storage_result.inserted if result.storage_result else 0,
+                "updated": result.storage_result.updated if result.storage_result else 0,
+                "failed": result.storage_result.failed if result.storage_result else 0,
+            } if result.storage_result else None,
+            "duration_seconds": result.duration_seconds,
+            "errors": result.errors[:5] if result.errors else [],
+        }
+        
+        _pipeline_status.log("", "info")
+        _pipeline_status.log(f"Pipeline completed in {result.duration_seconds:.1f}s", "success")
+        _pipeline_status.log(f"Total: {result.total_items_fetched} ideas from {result.sources_succeeded} sources", "info")
+        
+        _pipeline_status.status = "completed"
+        _pipeline_status.message = f"Fetched {result.total_items_fetched} ideas from {result.sources_succeeded} sources"
+        
+    except Exception as e:
+        _pipeline_status.log(f"Error: {str(e)}", "error")
+        _pipeline_status.log("Pipeline execution failed", "error")
+        _pipeline_status.status = "failed"
+        _pipeline_status.message = f"Pipeline failed: {str(e)}"
+        _pipeline_status.result = {"error": str(e)}
+    
+    finally:
+        _pipeline_status.running = False
+        _pipeline_status.finished_at = datetime.now()
+        _pipeline_status.log("$ _", "cmd")  # Blinking cursor effect
+
+
+@app.route("/api/pipeline/run", methods=["POST"])
+def api_pipeline_run():
+    """Trigger a pipeline run."""
+    global _pipeline_status
+    
+    # Check if already running
+    if _pipeline_status.running:
+        return jsonify({
+            "success": False,
+            "error": "Pipeline is already running",
+            "status": _pipeline_status.status,
+        }), 409
+    
+    # Get parameters
+    data = request.get_json() or {}
+    limit = min(int(data.get("limit", DEFAULT_LIMIT_PER_SOURCE)), 50)  # Cap at 50
+    
+    # Reset status
+    _pipeline_status = PipelineStatus(
+        running=True,
+        started_at=datetime.now(),
+        status="starting",
+        message="Initializing pipeline...",
+    )
+    
+    # Start pipeline in background thread
+    thread = threading.Thread(target=_run_pipeline_async, args=(limit,))
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        "success": True,
+        "message": "Pipeline started",
+        "status": "starting",
+    })
+
+
+@app.route("/api/pipeline/status")
+def api_pipeline_status():
+    """Get current pipeline status."""
+    global _pipeline_status
+    
+    response = {
+        "running": _pipeline_status.running,
+        "status": _pipeline_status.status,
+        "message": _pipeline_status.message,
+        "logs": _pipeline_status.logs or [],
+    }
+    
+    if _pipeline_status.started_at:
+        response["started_at"] = _pipeline_status.started_at.isoformat()
+    
+    if _pipeline_status.finished_at:
+        response["finished_at"] = _pipeline_status.finished_at.isoformat()
+        response["duration_seconds"] = (
+            _pipeline_status.finished_at - _pipeline_status.started_at
+        ).total_seconds()
+    
+    if _pipeline_status.result:
+        response["result"] = _pipeline_status.result
+    
+    return jsonify(response)
 
 
 @app.template_filter("score_color")

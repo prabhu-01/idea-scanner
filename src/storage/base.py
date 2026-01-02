@@ -129,6 +129,31 @@ class Storage(ABC):
         """
         return None
     
+    def search_items(
+        self,
+        query: str,
+        limit: int = 50,
+        source_filter: Optional[str] = None,
+    ) -> List[IdeaItem]:
+        """
+        Search for items matching a text query.
+        
+        Searches across title and description fields. Results are
+        sorted by relevance (score) descending.
+        
+        Default implementation returns empty list. Override for backends
+        that support text search.
+        
+        Args:
+            query: Search query string.
+            limit: Maximum number of results (default 50).
+            source_filter: Optional source name to filter by.
+            
+        Returns:
+            List of matching IdeaItem instances.
+        """
+        return []
+    
     def __str__(self) -> str:
         return f"Storage({self.name})"
     

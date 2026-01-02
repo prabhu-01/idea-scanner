@@ -55,6 +55,80 @@
                 <div class="storage-fill" style="width: {{ (record_count / 1200 * 100)|round(1) }}%"></div>
             </div>
         </div>
+        <div class="stat-divider"></div>
+        <button class="run-pipeline-btn" id="runPipelineBtn" onclick="runPipeline()">
+            <svg class="pipeline-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span class="pipeline-btn-text">Run Pipeline</span>
+        </button>
+    </div>
+</div>
+
+<!-- Pipeline Status Modal -->
+<div id="pipelineModal" class="pipeline-modal" style="display: none;">
+    <div class="pipeline-modal-backdrop" onclick="closePipelineModal()"></div>
+    <div class="pipeline-modal-content pipeline-modal-wide">
+        <div class="pipeline-modal-header">
+            <div class="pipeline-modal-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="4 17 10 11 4 5"/>
+                    <line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+                Pipeline Terminal
+            </div>
+            <div class="pipeline-header-status">
+                <span class="status-dot" id="pipelineStatusDot"></span>
+                <span id="pipelineStatusText">Starting...</span>
+            </div>
+            <button class="pipeline-modal-close" onclick="closePipelineModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="pipeline-terminal" id="pipelineTerminal">
+            <div class="terminal-output" id="terminalOutput">
+                <div class="terminal-line">
+                    <span class="terminal-prompt">$</span>
+                    <span class="terminal-cmd">idea-digest --run</span>
+                    <span class="terminal-cursor"></span>
+                </div>
+            </div>
+        </div>
+        <div class="pipeline-results-bar" id="pipelineResultsBar" style="display: none;">
+            <div class="result-stat">
+                <span class="result-icon">📥</span>
+                <span class="result-value" id="resultFetched">0</span>
+                <span class="result-label">fetched</span>
+            </div>
+            <div class="result-stat">
+                <span class="result-icon">✨</span>
+                <span class="result-value" id="resultInserted">0</span>
+                <span class="result-label">new</span>
+            </div>
+            <div class="result-stat">
+                <span class="result-icon">🔄</span>
+                <span class="result-value" id="resultUpdated">0</span>
+                <span class="result-label">updated</span>
+            </div>
+            <div class="result-stat">
+                <span class="result-icon">⏱️</span>
+                <span class="result-value" id="resultDuration">0s</span>
+                <span class="result-label">time</span>
+            </div>
+        </div>
+        <div class="pipeline-modal-footer">
+            <button class="pipeline-btn-secondary" onclick="closePipelineModal()">Close</button>
+            <button class="pipeline-btn-primary" id="pipelineRefreshBtn" onclick="window.location.reload()" style="display: none;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh Dashboard
+            </button>
+        </div>
     </div>
 </div>
 
@@ -84,6 +158,37 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Search Bar -->
+<div class="search-section">
+    <div class="search-container">
+        <div class="search-input-wrapper">
+            <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+            </svg>
+            <input type="text" 
+                   id="searchInput" 
+                   class="search-input" 
+                   placeholder="Search ideas by title or description..." 
+                   autocomplete="off"
+                   spellcheck="false">
+            <button type="button" id="clearSearch" class="search-clear" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div id="searchResults" class="search-results" style="display: none;">
+            <div class="search-results-header">
+                <span id="searchResultsCount"></span>
+                <button type="button" class="search-close" onclick="closeSearch()">Close</button>
+            </div>
+            <div id="searchResultsList" class="search-results-list"></div>
+        </div>
+    </div>
+</div>
 
 <!-- Filters -->
 <div class="filters-section">
@@ -1252,5 +1357,316 @@
         btn.disabled = false;
         btn.classList.remove('loading');
     }
+
+    // ==================== Search Functionality ====================
+    
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    const searchResultsList = document.getElementById('searchResultsList');
+    const searchResultsCount = document.getElementById('searchResultsCount');
+    const clearSearchBtn = document.getElementById('clearSearch');
+    
+    let searchTimeout = null;
+    
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const query = e.target.value.trim();
+            
+            // Show/hide clear button
+            clearSearchBtn.style.display = query.length > 0 ? 'block' : 'none';
+            
+            // Clear previous timeout
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            
+            // Hide results if query is empty
+            if (query.length === 0) {
+                closeSearch();
+                return;
+            }
+            
+            // Debounce search (300ms)
+            if (query.length >= 2) {
+                searchTimeout = setTimeout(() => performSearch(query), 300);
+            }
+        });
+        
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeSearch();
+                searchInput.blur();
+            }
+        });
+        
+        clearSearchBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            clearSearchBtn.style.display = 'none';
+            closeSearch();
+            searchInput.focus();
+        });
+    }
+    
+    async function performSearch(query) {
+        searchResults.style.display = 'flex';
+        searchResultsList.innerHTML = '<div class="search-loading">Searching...</div>';
+        
+        try {
+            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
+            const data = await response.json();
+            
+            if (data.success && data.results) {
+                if (data.results.length === 0) {
+                    searchResultsCount.textContent = 'No results found';
+                    searchResultsList.innerHTML = `
+                        <div class="search-no-results">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="11" cy="11" r="8"/>
+                                <path d="M21 21l-4.35-4.35"/>
+                            </svg>
+                            <p>No ideas found matching "${query}"</p>
+                        </div>
+                    `;
+                } else {
+                    searchResultsCount.textContent = `${data.count} result${data.count === 1 ? '' : 's'}`;
+                    searchResultsList.innerHTML = data.results.map(item => `
+                        <div class="search-result-item" onclick="window.open('${item.url}', '_blank')">
+                            <div class="search-result-source ${item.source_name}">
+                                ${item.source_name === 'hackernews' ? 'HN' : 
+                                  item.source_name === 'producthunt' ? 'PH' : 
+                                  item.source_name === 'github' ? 'GH' : '?'}
+                            </div>
+                            <div class="search-result-content">
+                                <div class="search-result-title">${escapeHtml(item.title)}</div>
+                                ${item.description ? `<div class="search-result-desc">${escapeHtml(item.description.substring(0, 100))}${item.description.length > 100 ? '...' : ''}</div>` : ''}
+                                <div class="search-result-meta">
+                                    ${item.points ? `<span>▲ ${item.points}</span>` : ''}
+                                    ${item.votes ? `<span>▲ ${item.votes}</span>` : ''}
+                                    ${item.stars ? `<span>⭐ ${item.stars.toLocaleString()}</span>` : ''}
+                                    ${item.comments_count ? `<span>💬 ${item.comments_count}</span>` : ''}
+                                    ${item.score ? `<span>Score: ${(item.score * 100).toFixed(0)}%</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } else {
+                searchResultsCount.textContent = 'Error';
+                searchResultsList.innerHTML = `<div class="search-no-results"><p>Search failed. Please try again.</p></div>`;
+            }
+        } catch (error) {
+            searchResultsCount.textContent = 'Error';
+            searchResultsList.innerHTML = `<div class="search-no-results"><p>Search failed: ${error.message}</p></div>`;
+        }
+    }
+    
+    function closeSearch() {
+        searchResults.style.display = 'none';
+        searchResultsList.innerHTML = '';
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Close search when clicking outside
+    document.addEventListener('click', function(e) {
+        const searchContainer = document.querySelector('.search-container');
+        if (searchContainer && !searchContainer.contains(e.target)) {
+            closeSearch();
+        }
+    });
+    
+    // Keyboard shortcut: Cmd/Ctrl + K to focus search
+    document.addEventListener('keydown', function(e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            searchInput.focus();
+        }
+    });
+
+    // ==================== Pipeline Functionality ====================
+    
+    let pipelinePollingInterval = null;
+    let lastLogCount = 0;
+    
+    async function runPipeline() {
+        const btn = document.getElementById('runPipelineBtn');
+        const modal = document.getElementById('pipelineModal');
+        const terminalOutput = document.getElementById('terminalOutput');
+        const statusDot = document.getElementById('pipelineStatusDot');
+        const statusText = document.getElementById('pipelineStatusText');
+        const resultsBar = document.getElementById('pipelineResultsBar');
+        const refreshBtn = document.getElementById('pipelineRefreshBtn');
+        
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.classList.add('running');
+        btn.querySelector('.pipeline-btn-text').textContent = 'Running...';
+        
+        // Reset terminal and show modal
+        terminalOutput.innerHTML = '';
+        lastLogCount = 0;
+        statusDot.className = 'status-dot running';
+        statusText.textContent = 'Starting...';
+        resultsBar.style.display = 'none';
+        refreshBtn.style.display = 'none';
+        modal.style.display = 'flex';
+        
+        try {
+            // Start the pipeline
+            const response = await fetch('/api/pipeline/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ limit: 10 })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                if (response.status === 409) {
+                    addTerminalLine('Pipeline is already running...', 'warning');
+                    statusText.textContent = 'Already running';
+                } else {
+                    throw new Error(data.error || 'Failed to start pipeline');
+                }
+                return;
+            }
+            
+            // Start polling for status
+            pollPipelineStatus();
+            
+        } catch (error) {
+            addTerminalLine(`Error: ${error.message}`, 'error');
+            statusDot.className = 'status-dot failed';
+            statusText.textContent = 'Failed';
+            resetPipelineButton();
+        }
+    }
+    
+    function pollPipelineStatus() {
+        // Poll every 800ms for smooth updates
+        pipelinePollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/pipeline/status');
+                const data = await response.json();
+                
+                updateTerminalUI(data);
+                
+                // Stop polling when done
+                if (!data.running && (data.status === 'completed' || data.status === 'failed')) {
+                    clearInterval(pipelinePollingInterval);
+                    pipelinePollingInterval = null;
+                    resetPipelineButton();
+                }
+            } catch (error) {
+                console.error('Failed to poll pipeline status:', error);
+            }
+        }, 800);
+    }
+    
+    function updateTerminalUI(data) {
+        const terminalOutput = document.getElementById('terminalOutput');
+        const statusDot = document.getElementById('pipelineStatusDot');
+        const statusText = document.getElementById('pipelineStatusText');
+        const resultsBar = document.getElementById('pipelineResultsBar');
+        const refreshBtn = document.getElementById('pipelineRefreshBtn');
+        
+        // Update status indicator
+        if (data.status === 'running' || data.status === 'starting') {
+            statusDot.className = 'status-dot running';
+            statusText.textContent = 'Running...';
+        } else if (data.status === 'completed') {
+            statusDot.className = 'status-dot completed';
+            statusText.textContent = 'Completed';
+            refreshBtn.style.display = 'inline-flex';
+            
+            // Show results bar
+            if (data.result) {
+                document.getElementById('resultFetched').textContent = data.result.total_items_fetched || 0;
+                document.getElementById('resultInserted').textContent = data.result.storage?.inserted || 0;
+                document.getElementById('resultUpdated').textContent = data.result.storage?.updated || 0;
+                document.getElementById('resultDuration').textContent = 
+                    data.duration_seconds ? `${data.duration_seconds.toFixed(1)}s` : '0s';
+                resultsBar.style.display = 'flex';
+            }
+        } else if (data.status === 'failed') {
+            statusDot.className = 'status-dot failed';
+            statusText.textContent = 'Failed';
+            refreshBtn.style.display = 'inline-flex';
+        }
+        
+        // Add new log entries
+        if (data.logs && data.logs.length > lastLogCount) {
+            const newLogs = data.logs.slice(lastLogCount);
+            newLogs.forEach(log => {
+                if (log.level === 'cmd') {
+                    addTerminalCommand(log.message);
+                } else {
+                    addTerminalLine(log.message, log.level, log.time);
+                }
+            });
+            lastLogCount = data.logs.length;
+            
+            // Auto-scroll to bottom
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+    }
+    
+    function addTerminalCommand(cmd) {
+        const terminalOutput = document.getElementById('terminalOutput');
+        const line = document.createElement('div');
+        line.className = 'terminal-line';
+        
+        if (cmd === '$ _') {
+            // Blinking cursor at end
+            line.innerHTML = `<span class="terminal-prompt">$</span><span class="terminal-cursor"></span>`;
+        } else {
+            line.innerHTML = `<span class="terminal-prompt">$</span><span class="terminal-cmd">${escapeHtml(cmd.replace('$ ', ''))}</span>`;
+        }
+        
+        terminalOutput.appendChild(line);
+    }
+    
+    function addTerminalLine(message, level = 'info', time = null) {
+        if (!message) return;
+        
+        const terminalOutput = document.getElementById('terminalOutput');
+        const line = document.createElement('div');
+        line.className = 'terminal-line';
+        
+        let timeHtml = time ? `<span class="terminal-time">[${time}]</span>` : '';
+        let textClass = `terminal-text ${level}`;
+        
+        line.innerHTML = `${timeHtml}<span class="${textClass}">${escapeHtml(message)}</span>`;
+        terminalOutput.appendChild(line);
+    }
+    
+    function resetPipelineButton() {
+        const btn = document.getElementById('runPipelineBtn');
+        btn.disabled = false;
+        btn.classList.remove('running');
+        btn.querySelector('.pipeline-btn-text').textContent = 'Run Pipeline';
+    }
+    
+    function closePipelineModal() {
+        const modal = document.getElementById('pipelineModal');
+        modal.style.display = 'none';
+        
+        // Stop polling if still active
+        if (pipelinePollingInterval) {
+            clearInterval(pipelinePollingInterval);
+            pipelinePollingInterval = null;
+        }
+    }
+    
+    // Close modal on escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closePipelineModal();
+        }
+    });
 </script>
 {% endblock %}
