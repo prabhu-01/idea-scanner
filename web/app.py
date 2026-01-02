@@ -489,8 +489,8 @@ def _run_pipeline_async(limit: int):
                 _pipeline_status.log(f"Failed to save {failed} records", "warning")
         
         # Digest
-        if result.digest_result:
-            _pipeline_status.log(f"Generated digest: {result.digest_result.filename}", "success")
+        if result.digest_result and result.digest_result.success:
+            _pipeline_status.log(f"Generated digest: {result.digest_result.filepath}", "success")
         
         # Convert result to dict
         _pipeline_status.result = {
