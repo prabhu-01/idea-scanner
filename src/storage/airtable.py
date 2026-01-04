@@ -380,10 +380,13 @@ class AirtableStorage(Storage):
         filter_formula: str = None,
         sort_field: str = None,
         sort_direction: str = "desc",
-        max_records: int = 100,
+        max_records: int = 500,
     ) -> List[Dict]:
         """
         List records from Airtable with optional filtering and sorting.
+        
+        Handles pagination automatically to fetch all matching records
+        up to max_records limit.
         
         Args:
             filter_formula: Airtable formula for filtering.
@@ -394,31 +397,48 @@ class AirtableStorage(Storage):
         Returns:
             List of Airtable record dicts.
         """
-        self._rate_limit()
+        all_records = []
+        offset = None
         
         try:
-            params = {"maxRecords": max_records}
+            while len(all_records) < max_records:
+                self._rate_limit()
+                
+                # Airtable returns max 100 per page
+                page_size = min(100, max_records - len(all_records))
+                params = {"pageSize": page_size}
+                
+                if filter_formula:
+                    params["filterByFormula"] = filter_formula
+                
+                if sort_field:
+                    params["sort[0][field]"] = sort_field
+                    params["sort[0][direction]"] = sort_direction
+                
+                if offset:
+                    params["offset"] = offset
+                
+                response = requests.get(
+                    self._base_url,
+                    headers=self._headers,
+                    params=params,
+                    timeout=REQUEST_TIMEOUT,
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                records = data.get("records", [])
+                all_records.extend(records)
+                
+                # Check if there are more pages
+                offset = data.get("offset")
+                if not offset or not records:
+                    break
             
-            if filter_formula:
-                params["filterByFormula"] = filter_formula
-            
-            if sort_field:
-                params["sort[0][field]"] = sort_field
-                params["sort[0][direction]"] = sort_direction
-            
-            response = requests.get(
-                self._base_url,
-                headers=self._headers,
-                params=params,
-                timeout=REQUEST_TIMEOUT,
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            return data.get("records", [])
+            return all_records
             
         except Exception:
-            return []
+            return all_records  # Return what we have so far
     
     # =========================================================================
     # Storage Interface Implementation

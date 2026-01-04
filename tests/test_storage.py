@@ -811,7 +811,8 @@ class TestSearchItems:
         call_args = mock_get.call_args
         params = call_args.kwargs.get("params", {})
         
-        assert params.get("maxRecords") == 25
+        # pageSize is used for pagination, capped at min(100, limit)
+        assert params.get("pageSize") == 25
     
     @patch("requests.get")
     def test_search_handles_api_error(self, mock_get, airtable_storage):
